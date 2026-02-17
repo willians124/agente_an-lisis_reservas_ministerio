@@ -10,7 +10,7 @@ import re
 # -----------------------
 
 st.set_page_config(
-    page_title="Data Intelligence",
+    page_title="Data Intelligence Copilot",
     layout="wide"
 )
 
@@ -55,7 +55,7 @@ if "analysis_summary" not in st.session_state:
     st.session_state.analysis_summary = ""
 
 # -----------------------
-# MOSTRAR HISTORIAL
+# MOSTRAR HISTORIAL CHAT
 # -----------------------
 
 for msg in st.session_state.messages:
@@ -74,16 +74,58 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
         st.write(prompt)
 
     # -----------------------
-    # STEP 1: GENERAR SQL
+    # SCHEMA DETALLADO
     # -----------------------
 
-    schema_description = """ Tabla: data Columnas: - nidreserva (id reserva) - scodigo_reserva (codigo único) - estado_r (estado de la reserva) Valores posibles: - Reservado - Pagado - Anulado - Vencido - Cerrado - Fusionado - Penalizado - ruta (nombre de ruta turística) - razon_social (agencia o empresa) - nguia (cantidad de guías asignados) - npa_cocinero (cantidad de cocineros) - npa_ayudante (cantidad de ayudantes) - npa_porteador (cantidad de porteadores) - totalvisitante (total de visitantes en la reserva) - cant_bajas (cantidad de bajas/cancelaciones parciales) - campamentos - guias - fechaVisita (fecha programada de visita) - nidLugar (lugar turístico) Valores posibles: - 1 = Llaqta Machupicchu - 2 = Red de Camino Inka """
+    schema_description = """
+    Tabla: data
+
+    Columnas:
+
+    - nidreserva (id reserva)
+    - scodigo_reserva (codigo único)
+    - estado_r (estado de la reserva)
+        Valores posibles:
+        - Reservado
+        - Pagado
+        - Anulado
+        - Vencido
+        - Cerrado
+        - Fusionado
+        - Penalizado
+
+    - ruta (nombre de ruta turística)
+
+    - razon_social (agencia o empresa)
+
+    - nguia (cantidad de guías asignados)
+    - npa_cocinero (cantidad de cocineros)
+    - npa_ayudante (cantidad de ayudantes)
+    - npa_porteador (cantidad de porteadores)
+
+    - totalvisitante (total de visitantes en la reserva)
+    - cant_bajas (cantidad de bajas/cancelaciones parciales)
+
+    - campamentos
+    - guias
+
+    - fechaVisita (fecha programada de visita)
+
+    - nidLugar (lugar turístico)
+        Valores posibles:
+        - 1 = Llaqta Machupicchu
+        - 2 = Red de Camino Inka
+    """
+
+    # -----------------------
+    # GENERAR SQL
+    # -----------------------
 
     try:
         sql_response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
-            max_tokens=250,
+            max_tokens=300,
             messages=[
                 {
                     "role": "system",
@@ -107,7 +149,6 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
         )
 
         sql_query = sql_response.choices[0].message.content.strip()
-
         sql_query = re.sub(r"```.*?\n", "", sql_query)
         sql_query = sql_query.replace("```", "").strip()
 
@@ -120,23 +161,36 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
         st.stop()
 
     # -----------------------
-    # STEP 2: EJECUTAR SQL
+    # EJECUTAR SQL
     # -----------------------
 
     try:
         result = con.execute(sql_query).df()
     except:
         with st.chat_message("assistant"):
-            st.write("No pude ejecutar el análisis sobre los datos.")
+            st.write("No pude ejecutar el análisis.")
         st.stop()
 
     if result.empty:
         with st.chat_message("assistant"):
-            st.write("La consulta no devolvió resultados relevantes.")
+            st.write("La consulta no devolvió resultados.")
         st.stop()
 
     # -----------------------
-    # STEP 3: ANALISIS DEL DATO
+    # MOSTRAR RESULTADOS
+    # -----------------------
+
+    st.divider()
+
+    st.subheader("🧾 Consulta Ejecutada")
+    with st.expander("Ver SQL generado"):
+        st.code(sql_query, language="sql")
+
+    st.subheader("📋 Resultado del Análisis")
+    st.dataframe(result, use_container_width=True)
+
+    # -----------------------
+    # ANALISIS DEL DATO
     # -----------------------
 
     try:
@@ -148,34 +202,23 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
                 {
                     "role": "system",
                     "content": """
-                    Eres un analista de datos explorando un dataset turístico.
-
-                    Usa el contexto previo si existe.
+                    Eres un analista de datos.
+                    Interpreta únicamente el comportamiento numérico.
                     No des recomendaciones.
                     No sugieras acciones.
-                    Solo analiza comportamiento del dato.
-
-                    Enfócate en:
-                    - Patrones
-                    - Concentraciones
-                    - Distribuciones
-                    - Variaciones relevantes
-                    - Relaciones entre variables
+                    Solo describe patrones, concentraciones, variaciones y relaciones.
                     """
                 },
                 {
                     "role": "user",
                     "content": f"""
-                    CONTEXTO PREVIO:
-                    {st.session_state.analysis_summary}
-
-                    NUEVA PREGUNTA:
+                    Pregunta:
                     {prompt}
 
-                    RESULTADO OBTENIDO:
+                    Resultado:
                     {result.head(25).to_string()}
 
-                    Analiza estos resultados.
+                    Analiza los datos.
                     """
                 }
             ]
@@ -185,16 +228,27 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
 
     except:
         with st.chat_message("assistant"):
-            st.write("Ocurrió un error generando el análisis.")
+            st.write("Error generando el análisis.")
         st.stop()
 
-    # Mostrar respuesta
-    with st.chat_message("assistant"):
-        st.write(analysis_text)
+    st.subheader("🧠 Análisis Interpretativo")
+
+    st.markdown(
+        f"""
+        <div style="
+            padding:20px;
+            border-radius:10px;
+            background-color:#f4f6f8;
+            border-left:6px solid #2E86C1;
+        ">
+        {analysis_text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.session_state.analysis_summary += "\n" + analysis_text[:400]
 
     st.session_state.messages.append(
         {"role": "assistant", "content": analysis_text}
     )
-
-    # Actualizar memoria resumida (limitada para bajo costo)
-    st.session_state.analysis_summary += "\n" + analysis_text[:400]
