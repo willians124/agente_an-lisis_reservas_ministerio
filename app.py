@@ -78,23 +78,41 @@ if st.button("Analizar"):
 
     schema_description = """
     Tabla: data
-
+    
     Columnas:
+    
     - nidreserva (id reserva)
-    - scodigo_reserva (codigo)
-    - estado_r (Pagado / Anulado)
-    - ruta (nombre de ruta)
-    - razon_social (agencia)
-    - nguia (cantidad guias)
-    - npa_cocinero
-    - npa_ayudante
-    - npa_porteador
-    - totalvisitante
-    - cant_bajas
+    - scodigo_reserva (codigo único)
+    - estado_r (estado de la reserva)
+        Valores posibles:
+        - Reservado
+        - Pagado
+        - Anulado
+        - Vencido
+        - Cerrado
+        - Fusionado
+        - Penalizado
+    
+    - ruta (nombre de ruta turística)
+    
+    - razon_social (agencia o empresa)
+    
+    - nguia (cantidad de guías asignados)
+    - npa_cocinero (cantidad de cocineros)
+    - npa_ayudante (cantidad de ayudantes)
+    - npa_porteador (cantidad de porteadores)
+    
+    - totalvisitante (total de visitantes en la reserva)
+    - cant_bajas (cantidad de bajas/cancelaciones parciales)
     - campamentos
     - guias
-    - fechaVisita (fecha)
-    - nidLugar
+    
+    - fechaVisita (fecha programada de visita)
+    
+    - nidLugar (lugar turístico)
+        Valores posibles:
+        - 1 = Llaqta Machupicchu
+        - 2 = Red de Camino Inka
     """
 
     # -----------------------
