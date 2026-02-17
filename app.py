@@ -10,11 +10,11 @@ import re
 # -----------------------
 
 st.set_page_config(
-    page_title="Data Intelligence ",
+    page_title="Data Intelligence Copilot",
     layout="wide"
 )
 
-st.title("📊 Data Intelligence ")
+st.title("📊 Data Intelligence Copilot")
 st.caption("Explorador Analítico de Reservas Turísticas")
 
 # -----------------------
@@ -51,11 +51,8 @@ con.register("data", df)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "analysis_summary" not in st.session_state:
-    st.session_state.analysis_summary = ""
-
 # -----------------------
-# MOSTRAR HISTORIAL CHAT
+# HISTORIAL CHAT
 # -----------------------
 
 for msg in st.session_state.messages:
@@ -99,19 +96,16 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
     - razon_social (agencia o empresa)
 
     - nguia (cantidad de guías asignados)
-    - npa_cocinero (cantidad de cocineros)
-    - npa_ayudante (cantidad de ayudantes)
-    - npa_porteador (cantidad de porteadores)
+    - npa_cocinero
+    - npa_ayudante
+    - npa_porteador
 
-    - totalvisitante (total de visitantes en la reserva)
-    - cant_bajas (cantidad de bajas/cancelaciones parciales)
+    - totalvisitante
+    - cant_bajas
 
-    - campamentos
-    - guias
+    - fechaVisita
 
-    - fechaVisita (fecha programada de visita)
-
-    - nidLugar (lugar turístico)
+    - nidLugar
         Valores posibles:
         - 1 = Llaqta Machupicchu
         - 2 = Red de Camino Inka
@@ -177,7 +171,7 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
         st.stop()
 
     # -----------------------
-    # MOSTRAR RESULTADOS
+    # MOSTRAR SQL Y TABLA
     # -----------------------
 
     st.divider()
@@ -190,7 +184,7 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
     st.dataframe(result, use_container_width=True)
 
     # -----------------------
-    # ANALISIS DEL DATO
+    # ANALISIS INTERPRETATIVO (SOLO TEXTO)
     # -----------------------
 
     try:
@@ -206,7 +200,9 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
                     Interpreta únicamente el comportamiento numérico.
                     No des recomendaciones.
                     No sugieras acciones.
-                    Solo describe patrones, concentraciones, variaciones y relaciones.
+                    No formatees como lista de acciones.
+                    Solo describe patrones, concentraciones,
+                    distribuciones y variaciones observadas.
                     """
                 },
                 {
@@ -218,7 +214,7 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
                     Resultado:
                     {result.head(25).to_string()}
 
-                    Analiza los datos.
+                    Interpreta los resultados.
                     """
                 }
             ]
@@ -240,14 +236,14 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
             border-radius:10px;
             background-color:#f4f6f8;
             border-left:6px solid #2E86C1;
+            font-size:16px;
+            line-height:1.6;
         ">
         {analysis_text}
         </div>
         """,
         unsafe_allow_html=True
     )
-
-    st.session_state.analysis_summary += "\n" + analysis_text[:400]
 
     st.session_state.messages.append(
         {"role": "assistant", "content": analysis_text}
