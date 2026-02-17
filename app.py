@@ -9,13 +9,22 @@ import re
 # CONFIG
 # -----------------------
 
-st.set_page_config(page_title="Data Exploration Copilot", layout="wide")
-st.title("🧠 Data Exploration Copilot")
+st.set_page_config(
+    page_title="Data Intelligence",
+    layout="wide"
+)
+
+st.title("📊 Data Intelligence Copilot")
+st.caption("Explorador Analítico de Reservas Turísticas")
+
+# -----------------------
+# OPENAI CLIENT
+# -----------------------
 
 api_key = os.getenv("OPENAI_API_KEY")
 
 if not api_key:
-    st.error("OPENAI_API_KEY no configurada.")
+    st.error("OPENAI_API_KEY no configurada en Secrets.")
     st.stop()
 
 client = OpenAI(api_key=api_key)
@@ -36,19 +45,28 @@ con = duckdb.connect()
 con.register("data", df)
 
 # -----------------------
-# CHAT STATE
+# SESSION STATE
 # -----------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Mostrar historial
+if "analysis_summary" not in st.session_state:
+    st.session_state.analysis_summary = ""
+
+# -----------------------
+# MOSTRAR HISTORIAL
+# -----------------------
+
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# Input usuario
-if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
+# -----------------------
+# INPUT
+# -----------------------
+
+if prompt := st.chat_input("Pregunta algo sobre los datos..."):
 
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -56,14 +74,14 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
         st.write(prompt)
 
     # -----------------------
-    # PASO 1: GENERAR SQL INTERNO
+    # STEP 1: GENERAR SQL
     # -----------------------
 
     schema_description = """
     Tabla: data
 
-    Columnas principales:
-    - estado_r
+    Columnas disponibles:
+    - estado_r (estado de reserva)
     - ruta
     - razon_social
     - totalvisitante
@@ -76,15 +94,15 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
         sql_response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
-            max_tokens=300,
+            max_tokens=250,
             messages=[
                 {
                     "role": "system",
                     "content": """
                     Genera únicamente SQL válido para DuckDB.
                     Usa la tabla 'data'.
+                    Devuelve solo una consulta SELECT.
                     No uses markdown.
-                    Solo devuelve la consulta SELECT.
                     """
                 },
                 {
@@ -105,15 +123,15 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
         sql_query = sql_query.replace("```", "").strip()
 
         if not sql_query.lower().startswith("select"):
-            raise Exception("SQL inválido generado.")
+            raise Exception("SQL inválido")
 
-    except Exception as e:
+    except:
         with st.chat_message("assistant"):
             st.write("No pude interpretar esa consulta.")
         st.stop()
 
     # -----------------------
-    # PASO 2: EJECUTAR SQL
+    # STEP 2: EJECUTAR SQL
     # -----------------------
 
     try:
@@ -129,7 +147,7 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
         st.stop()
 
     # -----------------------
-    # PASO 3: ANALISIS DEL DATO
+    # STEP 3: ANALISIS DEL DATO
     # -----------------------
 
     try:
@@ -143,26 +161,29 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
                     "content": """
                     Eres un analista de datos explorando un dataset turístico.
 
-                    Analiza el comportamiento de los datos de manera clara.
-
-                    - Identifica patrones
-                    - Señala concentraciones relevantes
-                    - Detecta variaciones importantes
-                    - Describe tendencias si existen
-                    - Interpreta relaciones si se observan
-
+                    Usa el contexto previo si existe.
                     No des recomendaciones.
                     No sugieras acciones.
-                    Solo analiza los datos.
+                    Solo analiza comportamiento del dato.
+
+                    Enfócate en:
+                    - Patrones
+                    - Concentraciones
+                    - Distribuciones
+                    - Variaciones relevantes
+                    - Relaciones entre variables
                     """
                 },
                 {
                     "role": "user",
                     "content": f"""
-                    Pregunta original:
+                    CONTEXTO PREVIO:
+                    {st.session_state.analysis_summary}
+
+                    NUEVA PREGUNTA:
                     {prompt}
 
-                    Resultado obtenido:
+                    RESULTADO OBTENIDO:
                     {result.head(25).to_string()}
 
                     Analiza estos resultados.
@@ -173,14 +194,18 @@ if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
 
         analysis_text = analysis_response.choices[0].message.content
 
-    except Exception as e:
+    except:
         with st.chat_message("assistant"):
             st.write("Ocurrió un error generando el análisis.")
         st.stop()
 
+    # Mostrar respuesta
     with st.chat_message("assistant"):
         st.write(analysis_text)
 
     st.session_state.messages.append(
         {"role": "assistant", "content": analysis_text}
     )
+
+    # Actualizar memoria resumida (limitada para bajo costo)
+    st.session_state.analysis_summary += "\n" + analysis_text[:400]
