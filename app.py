@@ -121,39 +121,34 @@ if st.button("Analizar"):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=700,
-            temperature=0.2,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-                    Eres un analista experto.
-                    Genera SQL puro compatible con DuckDB.
-                    No uses markdown ni ```.
+    model="gpt-4o-mini",
+    temperature=0.2,
+    max_tokens=500,
+    messages=[
+        {
+            "role": "system",
+            "content": """
+            Eres un analista de datos.
+            Analiza el comportamiento numérico.
+            No des recomendaciones.
+            No sugieras acciones.
+            Solo interpreta patrones.
+            """
+        },
+        {
+            "role": "user",
+            "content": f"""
+            Pregunta original:
+            {user_prompt}
 
-                    Luego escribe un análisis interpetrativo.
+            Resultado:
+            {result.head(20).to_string()}
 
-                     Formato exacto:
-                    
-                    SQL:
-                    <query>
-                    
-                    ANALISIS:
-                    <explicacion>
-                    """
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-                    {schema_description}
-
-                    Pregunta:
-                    {user_prompt}
-                    """
-                }
-            ]
-        )
+            Analiza los datos.
+            """
+        }
+    ]
+)
 
         full_response = response.choices[0].message.content
 
