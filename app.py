@@ -229,23 +229,7 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
 
     st.subheader("🧠 Análisis Interpretativo")
 
-    with st.container():
-        st.markdown(
-            f"""
-            <div style="
-                padding:20px;
-                border-radius:12px;
-                background-color:#f4f6f8;
-                border:1px solid #d9e1e8;
-                font-size:16px;
-                line-height:1.6;
-                color:#1f2d3d;
-            ">
-            {analysis_text}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    st.write(analysis_text)
 
     st.session_state.messages.append(
         {"role": "assistant", "content": analysis_text}
