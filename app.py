@@ -46,10 +46,19 @@ con = get_con(df)
 # -----------------------
 # HELPERS
 # -----------------------
-def clean_sql(sql_text: str) -> str:
-    sql_text = re.sub(r"```.*?\n", "", sql_text)
-    sql_text = sql_text.replace("```", "").strip()
-    return sql_text
+def extract_sql(text):
+    text = re.sub(r"```.*?\n", "", text)
+    text = text.replace("```", "").strip()
+
+    match = re.search(r"(select .*?;)", text, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    match = re.search(r"(select .*?$)", text, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    return None
 
 def wants_histogram(text):
     return any(x in text.lower() for x in ["histograma", "histogram", "distribución", "distribucion"])
@@ -96,7 +105,7 @@ def plot_result(result, prompt):
             st.pyplot(fig)
         return
 
-    # 3 columnas típicas (empresa + 2 métricas)
+    # 3 columnas (categoría + 2 métricas)
     if len(non_num_cols) >= 1 and len(num_cols) >= 2:
         cat = non_num_cols[0]
         m1, m2 = num_cols[:2]
@@ -119,6 +128,7 @@ def plot_result(result, prompt):
 # KPIs
 # -----------------------
 k1, k2, k3, k4 = st.columns(4)
+
 k1.metric("Total Reservas", f"{df.shape[0]:,}")
 k2.metric("Total Visitantes", f"{int(df['totalvisitante'].sum()):,}")
 k3.metric("Anuladas", f"{int((df['estado_r']=='Anulado').sum()):,}")
@@ -133,6 +143,7 @@ st.subheader("📊 Panorama General")
 
 estado_df = df.groupby("estado_r")["nidreserva"].count().reset_index()
 rutas_df = df.groupby("ruta")["totalvisitante"].sum().sort_values(ascending=False).head(8)
+
 df["mes"] = df["fechaVisita"].dt.to_period("M").astype(str)
 tendencia_df = df.groupby("mes")["totalvisitante"].sum().reset_index()
 
@@ -175,20 +186,23 @@ if prompt:
     - nidLugar
     """
 
+    # Generar SQL
     sql_gen = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.2,
-        max_tokens=300,
+        max_tokens=350,
         messages=[
             {"role": "system", "content": "Genera SQL SELECT válido para DuckDB usando tabla data."},
             {"role": "user", "content": f"{schema_description}\nPregunta: {prompt}"}
         ]
     )
 
-    sql_query = clean_sql(sql_gen.choices[0].message.content)
+    raw_sql = sql_gen.choices[0].message.content
+    sql_query = extract_sql(raw_sql)
 
-    if not sql_query.lower().startswith("select"):
-        st.error("No se pudo generar SQL válido.")
+    if not sql_query:
+        st.error("El modelo no generó una consulta SQL válida.")
+        st.write(raw_sql)
         st.stop()
 
     with st.expander("🧾 Ver SQL generado"):
@@ -207,7 +221,7 @@ if prompt:
     st.subheader("📋 Resultado")
     st.dataframe(result, use_container_width=True)
 
-    # 🔥 Gráfico inteligente
+    # Graficación automática
     plot_result(result, prompt)
 
     # -----------------------
