@@ -12,14 +12,14 @@ from openai import OpenAI
 st.set_page_config(page_title="Data Intelligence Dashboard", layout="wide")
 
 st.title("📊 Data Intelligence Dashboard")
-st.caption("Panel Analítico de Reservas Turísticas + Agente Conversacional")
+st.caption("Panel Analítico de Reservas Turísticas + Copiloto Conversacional")
 
 # -----------------------
 # OPENAI
 # -----------------------
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    st.error("OPENAI_API_KEY no configurada en Secrets.")
+    st.error("OPENAI_API_KEY no configurada.")
     st.stop()
 
 client = OpenAI(api_key=api_key)
@@ -35,7 +35,6 @@ def load_data():
 
 df = load_data()
 
-# DuckDB (reutilizable)
 @st.cache_resource
 def get_con(df_):
     con_ = duckdb.connect()
@@ -48,30 +47,81 @@ con = get_con(df)
 # HELPERS
 # -----------------------
 def clean_sql(sql_text: str) -> str:
-    sql_text = sql_text.strip()
     sql_text = re.sub(r"```.*?\n", "", sql_text)
     sql_text = sql_text.replace("```", "").strip()
     return sql_text
 
-def run_sql(sql_query: str) -> pd.DataFrame:
-    return con.execute(sql_query).df()
+def wants_histogram(text):
+    return any(x in text.lower() for x in ["histograma", "histogram", "distribución", "distribucion"])
 
-def safe_bar(ax, x, y):
-    ax.bar(x, y)
-    ax.tick_params(axis="x", labelrotation=45)
+def is_date_like(s):
+    return pd.to_datetime(s, errors="coerce").notna().mean() > 0.8
 
-def safe_line(ax, x, y):
-    ax.plot(x, y)
-    ax.tick_params(axis="x", labelrotation=45)
+def plot_result(result, prompt):
+    if result.empty:
+        return
+
+    num_cols = [c for c in result.columns if pd.api.types.is_numeric_dtype(result[c])]
+    non_num_cols = [c for c in result.columns if c not in num_cols]
+
+    # HISTOGRAMA
+    if wants_histogram(prompt) and len(num_cols) > 0:
+        col = num_cols[0]
+        st.markdown("### 📈 Histograma")
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.hist(result[col].dropna(), bins=20)
+        ax.set_title(f"Distribución de {col}")
+        st.pyplot(fig)
+        return
+
+    # 2 columnas
+    if result.shape[1] == 2:
+        x, y = result.columns
+
+        if is_date_like(result[x]):
+            st.markdown("### 📈 Tendencia")
+            fig, ax = plt.subplots(figsize=(8,4))
+            tmp = result.copy()
+            tmp[x] = pd.to_datetime(tmp[x])
+            tmp = tmp.sort_values(x)
+            ax.plot(tmp[x], tmp[y])
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
+        else:
+            st.markdown("### 📊 Gráfico")
+            tmp = result.sort_values(y, ascending=False)
+            fig, ax = plt.subplots(figsize=(8,4))
+            ax.bar(tmp[x].astype(str), tmp[y])
+            plt.xticks(rotation=60, ha="right")
+            st.pyplot(fig)
+        return
+
+    # 3 columnas típicas (empresa + 2 métricas)
+    if len(non_num_cols) >= 1 and len(num_cols) >= 2:
+        cat = non_num_cols[0]
+        m1, m2 = num_cols[:2]
+
+        tmp = result.sort_values(m1, ascending=False)
+
+        st.markdown(f"### 📊 {m1} por {cat}")
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.bar(tmp[cat].astype(str), tmp[m1])
+        plt.xticks(rotation=60, ha="right")
+        st.pyplot(fig)
+
+        st.markdown(f"### 📊 {m2} por {cat}")
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.bar(tmp[cat].astype(str), tmp[m2])
+        plt.xticks(rotation=60, ha="right")
+        st.pyplot(fig)
 
 # -----------------------
-# KPI HEADER
+# KPIs
 # -----------------------
 k1, k2, k3, k4 = st.columns(4)
-
 k1.metric("Total Reservas", f"{df.shape[0]:,}")
 k2.metric("Total Visitantes", f"{int(df['totalvisitante'].sum()):,}")
-k3.metric("Anuladas", f"{int((df['estado_r'] == 'Anulado').sum()):,}")
+k3.metric("Anuladas", f"{int((df['estado_r']=='Anulado').sum()):,}")
 k4.metric("Prom. Visitantes/Reserva", f"{df['totalvisitante'].mean():.2f}")
 
 st.divider()
@@ -79,332 +129,104 @@ st.divider()
 # -----------------------
 # DASHBOARD AUTOMÁTICO
 # -----------------------
-st.subheader("📊 Panorama General (Automático)")
+st.subheader("📊 Panorama General")
 
-# 1) Distribución por estado
-estado_df = (
-    df.groupby("estado_r")["nidreserva"]
-    .count()
-    .reset_index()
-    .rename(columns={"nidreserva": "reservas"})
-    .sort_values("reservas", ascending=False)
-)
+estado_df = df.groupby("estado_r")["nidreserva"].count().reset_index()
+rutas_df = df.groupby("ruta")["totalvisitante"].sum().sort_values(ascending=False).head(8)
+df["mes"] = df["fechaVisita"].dt.to_period("M").astype(str)
+tendencia_df = df.groupby("mes")["totalvisitante"].sum().reset_index()
 
-# 2) Top rutas por visitantes
-rutas_df = (
-    df.groupby("ruta")["totalvisitante"]
-    .sum()
-    .sort_values(ascending=False)
-    .head(10)
-)
+colA, colB = st.columns(2)
 
-# 3) Top agencias por visitantes
-agencias_df = (
-    df.groupby("razon_social")["totalvisitante"]
-    .sum()
-    .sort_values(ascending=False)
-    .head(10)
-)
-
-# 4) Tendencia mensual de visitantes
-df_dash = df.copy()
-df_dash["mes"] = df_dash["fechaVisita"].dt.to_period("M").astype(str)
-tendencia_df = (
-    df_dash.dropna(subset=["mes"])
-    .groupby("mes")["totalvisitante"]
-    .sum()
-    .reset_index()
-    .sort_values("mes")
-)
-
-c1, c2 = st.columns(2)
-
-with c1:
+with colA:
     st.markdown("### Distribución por Estado")
-    fig, ax = plt.subplots(figsize=(7, 4))
-    safe_bar(ax, estado_df["estado_r"].astype(str), estado_df["reservas"])
-    plt.tight_layout()
+    fig, ax = plt.subplots()
+    ax.bar(estado_df["estado_r"], estado_df["nidreserva"])
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 
-with c2:
-    st.markdown("### Tendencia Mensual de Visitantes")
-    fig, ax = plt.subplots(figsize=(7, 4))
-    safe_line(ax, tendencia_df["mes"], tendencia_df["totalvisitante"])
-    plt.tight_layout()
-    st.pyplot(fig)
-
-c3, c4 = st.columns(2)
-
-with c3:
-    st.markdown("### Top 10 Rutas por Visitantes")
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.barh(rutas_df.index.astype(str), rutas_df.values)
-    ax.invert_yaxis()
-    plt.tight_layout()
-    st.pyplot(fig)
-
-with c4:
-    st.markdown("### Top 10 Agencias por Visitantes")
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.barh(agencias_df.index.astype(str), agencias_df.values)
-    ax.invert_yaxis()
-    plt.tight_layout()
+with colB:
+    st.markdown("### Tendencia Mensual")
+    fig, ax = plt.subplots()
+    ax.plot(tendencia_df["mes"], tendencia_df["totalvisitante"])
+    plt.xticks(rotation=45)
     st.pyplot(fig)
 
 st.divider()
 
 # -----------------------
-# INSIGHT AUTOMÁTICO (texto)
+# CHAT
 # -----------------------
-st.subheader("🧠 Interpretación del Panorama")
+st.subheader("💬 Copiloto Analítico")
 
-if "overview_text" not in st.session_state:
-    with st.spinner("Generando interpretación automática..."):
-        overview = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=450,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-Eres un analista senior.
-Interpreta el panorama general del dataset usando SOLO la información entregada.
-No des recomendaciones ni acciones.
-Haz un análisis descriptivo: patrones, concentración, variaciones, distribución, estacionalidad si se observa.
-"""
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-Distribución por estado:
-{estado_df.to_string(index=False)}
-
-Top rutas por visitantes:
-{rutas_df.to_string()}
-
-Top agencias por visitantes:
-{agencias_df.to_string()}
-
-Tendencia mensual (primeros 12):
-{tendencia_df.head(12).to_string(index=False)}
-"""
-                }
-            ]
-        )
-        st.session_state.overview_text = overview.choices[0].message.content
-
-st.write(st.session_state.overview_text)
-
-st.divider()
-
-# -----------------------
-# SUGERENCIAS (botones)
-# -----------------------
-st.markdown("### 🔎 Sugerencias de exploración (1 clic)")
-
-b1, b2, b3, b4 = st.columns(4)
-
-if b1.button("Anulaciones por Ruta"):
-    st.session_state.prefill = "Analiza la proporción de anulaciones por ruta (conteo y %)."
-
-if b2.button("Concentración por Agencia"):
-    st.session_state.prefill = "Analiza la concentración de visitantes por agencia (top 15 y % acumulado)."
-
-if b3.button("Llaqta vs Camino Inka"):
-    st.session_state.prefill = "Compara nidLugar 1 vs 2 en visitantes totales y reservas por estado."
-
-if b4.button("Bajas vs Visitantes"):
-    st.session_state.prefill = "Analiza la relación entre cant_bajas y totalvisitante (agrupa por rangos si aplica)."
-
-st.divider()
-
-# -----------------------
-# CHAT / CONSULTA AVANZADA
-# -----------------------
-st.subheader("💬 Agente Conversacional (consulta + resultado + gráfico + análisis)")
-
-schema_description = """
-Tabla: data
-
-Columnas:
-
-- nidreserva (id reserva)
-- scodigo_reserva (codigo único)
-- estado_r (estado de la reserva)
-    Valores posibles:
-    - Reservado
-    - Pagado
-    - Anulado
-    - Vencido
-    - Cerrado
-    - Fusionado
-    - Penalizado
-
-- ruta (nombre de ruta turística)
-- razon_social (agencia o empresa)
-
-- nguia (cantidad de guías asignados)
-- npa_cocinero
-- npa_ayudante
-- npa_porteador
-
-- totalvisitante
-- cant_bajas
-
-- campamentos
-- guias
-
-- fechaVisita
-
-- nidLugar
-    Valores posibles:
-    - 1 = Llaqta Machupicchu
-    - 2 = Red de Camino Inka
-"""
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# Mostrar historial
-for m in st.session_state.chat_history:
-    with st.chat_message(m["role"]):
-        st.write(m["content"])
-
-prompt = st.chat_input("Escribe tu consulta...")
-
-if "prefill" in st.session_state:
-    prompt = st.session_state.prefill
-    del st.session_state.prefill
+prompt = st.chat_input("Haz una consulta...")
 
 if prompt:
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.write(prompt)
 
-    # 1) Generar SQL
-    try:
-        with st.spinner("Generando consulta..."):
-            sql_resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                temperature=0.2,
-                max_tokens=320,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """
-Genera únicamente SQL válido para DuckDB.
-Usa la tabla 'data'.
-Devuelve solo una consulta SELECT (sin markdown).
-"""
-                    },
-                    {
-                        "role": "user",
-                        "content": f"""
-{schema_description}
+    schema_description = """
+    Tabla: data
+    Columnas:
+    - estado_r
+    - ruta
+    - razon_social
+    - totalvisitante
+    - cant_bajas
+    - fechaVisita
+    - nidLugar
+    """
 
-Pregunta:
-{prompt}
-"""
-                    }
-                ]
-            )
-        sql_query = clean_sql(sql_resp.choices[0].message.content)
-        if not sql_query.lower().startswith("select"):
-            raise ValueError("SQL inválido generado.")
-    except Exception as e:
-        with st.chat_message("assistant"):
-            st.error(f"No pude generar SQL: {e}")
+    sql_gen = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        max_tokens=300,
+        messages=[
+            {"role": "system", "content": "Genera SQL SELECT válido para DuckDB usando tabla data."},
+            {"role": "user", "content": f"{schema_description}\nPregunta: {prompt}"}
+        ]
+    )
+
+    sql_query = clean_sql(sql_gen.choices[0].message.content)
+
+    if not sql_query.lower().startswith("select"):
+        st.error("No se pudo generar SQL válido.")
         st.stop()
 
-    # 2) Ejecutar
+    with st.expander("🧾 Ver SQL generado"):
+        st.code(sql_query, language="sql")
+
     try:
-        result = run_sql(sql_query)
-        if result.empty:
-            with st.chat_message("assistant"):
-                st.write("La consulta no devolvió resultados.")
-            st.stop()
+        result = con.execute(sql_query).df()
     except Exception as e:
-        with st.chat_message("assistant"):
-            st.error(f"Error ejecutando SQL: {e}")
+        st.error(f"Error ejecutando SQL: {e}")
         st.stop()
 
-    # 3) Mostrar SQL + Tabla
-    with st.chat_message("assistant"):
-        st.markdown("**🧾 SQL ejecutado (expandible):**")
-        with st.expander("Ver SQL"):
-            st.code(sql_query, language="sql")
+    if result.empty:
+        st.warning("La consulta no devolvió resultados.")
+        st.stop()
 
-        st.markdown("**📋 Resultado:**")
-        st.dataframe(result, use_container_width=True)
+    st.subheader("📋 Resultado")
+    st.dataframe(result, use_container_width=True)
 
-        # 4) Graficación automática para 2 columnas
-        if result.shape[1] == 2:
-            st.markdown("**📈 Gráfico automático:**")
-            xcol, ycol = result.columns[0], result.columns[1]
+    # 🔥 Gráfico inteligente
+    plot_result(result, prompt)
 
-            # si x es fecha o parece fecha
-            try:
-                x_as_dt = pd.to_datetime(result[xcol], errors="coerce")
-                is_date_like = x_as_dt.notna().mean() > 0.8
-            except:
-                is_date_like = False
+    # -----------------------
+    # ANALISIS
+    # -----------------------
+    analysis = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        max_tokens=600,
+        messages=[
+            {"role": "system", "content": """
+            Eres un analista senior.
+            Analiza profundamente los datos.
+            No des recomendaciones.
+            Describe patrones, concentración y variaciones.
+            """},
+            {"role": "user", "content": result.head(25).to_string()}
+        ]
+    )
 
-            if is_date_like:
-                # ordenar por fecha
-                tmp = result.copy()
-                tmp[xcol] = pd.to_datetime(tmp[xcol], errors="coerce")
-                tmp = tmp.dropna(subset=[xcol]).sort_values(xcol)
-
-                fig, ax = plt.subplots(figsize=(9, 4))
-                ax.plot(tmp[xcol], tmp[ycol])
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-                st.pyplot(fig)
-            else:
-                tmp = result.copy().sort_values(ycol, ascending=False)
-                fig_width = max(8, len(tmp) * 0.55)
-                fig, ax = plt.subplots(figsize=(fig_width, 4))
-                ax.bar(tmp[xcol].astype(str), tmp[ycol])
-                if len(tmp) > 6:
-                    plt.xticks(rotation=60, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig)
-
-        # 5) Análisis interpretativo (texto)
-        with st.spinner("Generando análisis interpretativo..."):
-            try:
-                analysis_resp = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    temperature=0.25,
-                    max_tokens=550,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": """
-Eres un analista senior de datos.
-Interpreta únicamente los datos del resultado.
-No des recomendaciones ni acciones.
-Haz análisis descriptivo: patrón dominante, concentración/dispersión, magnitudes relativas, variaciones, posibles anomalías.
-"""
-                        },
-                        {
-                            "role": "user",
-                            "content": f"""
-Pregunta:
-{prompt}
-
-Resultado (hasta 25 filas):
-{result.head(25).to_string()}
-"""
-                        }
-                    ]
-                )
-                analysis_text = analysis_resp.choices[0].message.content
-            except Exception as e:
-                analysis_text = f"No pude generar el análisis: {e}"
-
-        st.markdown("**🧠 Análisis interpretativo:**")
-        st.write(analysis_text)
-
-    st.session_state.chat_history.append({"role": "assistant", "content": analysis_text})
+    st.subheader("🧠 Análisis Interpretativo")
+    st.write(analysis.choices[0].message.content)
