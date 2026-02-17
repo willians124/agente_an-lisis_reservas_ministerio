@@ -4,27 +4,24 @@ import pandas as pd
 import os
 from openai import OpenAI
 import re
+import matplotlib.pyplot as plt
 
 # -----------------------
 # CONFIG
 # -----------------------
 
-st.set_page_config(
-    page_title="Data Intelligence",
-    layout="wide"
-)
+st.set_page_config(page_title="Data Intelligence Copilot", layout="wide")
 
-st.title("📊 Data Intelligence")
+st.title("📊 Data Intelligence Copilot")
 st.caption("Explorador Analítico de Reservas Turísticas")
 
 # -----------------------
-# OPENAI CLIENT
+# OPENAI
 # -----------------------
 
 api_key = os.getenv("OPENAI_API_KEY")
-
 if not api_key:
-    st.error("OPENAI_API_KEY no configurada en Secrets.")
+    st.error("OPENAI_API_KEY no configurada.")
     st.stop()
 
 client = OpenAI(api_key=api_key)
@@ -45,113 +42,128 @@ con = duckdb.connect()
 con.register("data", df)
 
 # -----------------------
-# SESSION STATE
+# PANORAMA AUTOMÁTICO
 # -----------------------
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "auto_overview" not in st.session_state:
+    with st.spinner("Analizando estructura general del dataset..."):
+        resumen = df.groupby("estado_r")["nidreserva"].count().reset_index()
+
+        overview = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            max_tokens=350,
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+                    Eres un analista senior.
+                    Describe el panorama general del dataset.
+                    No des recomendaciones.
+                    Solo interpreta patrones visibles.
+                    """
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+                    Distribución por estado:
+                    {resumen.to_string()}
+                    """
+                }
+            ]
+        )
+
+        st.subheader("📊 Panorama General")
+        st.write(overview.choices[0].message.content)
+
+        st.session_state.auto_overview = True
+
+st.divider()
 
 # -----------------------
-# HISTORIAL CHAT
+# SUGERENCIAS
 # -----------------------
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+st.markdown("### 🔎 Sugerencias de Análisis")
+
+col1, col2, col3 = st.columns(3)
+
+if col1.button("Distribución por Estado"):
+    st.session_state.prefill = "Analiza la distribución de reservas por estado."
+
+if col2.button("Top Agencias"):
+    st.session_state.prefill = "Analiza la concentración de visitantes por agencia."
+
+if col3.button("Tendencia Temporal"):
+    st.session_state.prefill = "Evalúa el comportamiento mensual de visitantes."
 
 # -----------------------
 # INPUT
 # -----------------------
 
-if prompt := st.chat_input("Pregunta algo sobre los datos..."):
+prompt = st.chat_input("Pregunta algo sobre los datos...")
 
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if "prefill" in st.session_state:
+    prompt = st.session_state.prefill
+    del st.session_state.prefill
 
-    with st.chat_message("user"):
-        st.write(prompt)
+if prompt:
+
+    st.divider()
+    st.markdown("## 🧠 Consulta")
 
     # -----------------------
-    # SCHEMA DETALLADO
+    # SCHEMA
     # -----------------------
 
     schema_description = """
     Tabla: data
 
     Columnas:
-
-    - nidreserva (id reserva)
-    - scodigo_reserva (codigo único)
-    - estado_r (estado de la reserva)
-        Valores posibles:
-        - Reservado
-        - Pagado
-        - Anulado
-        - Vencido
-        - Cerrado
-        - Fusionado
-        - Penalizado
-
-    - ruta (nombre de ruta turística)
-
-    - razon_social (agencia o empresa)
-
-    - nguia (cantidad de guías asignados)
-    - npa_cocinero
-    - npa_ayudante
-    - npa_porteador
-
+    - estado_r
+    - ruta
+    - razon_social
     - totalvisitante
     - cant_bajas
-
     - fechaVisita
-
     - nidLugar
-        Valores posibles:
-        - 1 = Llaqta Machupicchu
-        - 2 = Red de Camino Inka
     """
 
     # -----------------------
     # GENERAR SQL
     # -----------------------
 
-    try:
-        sql_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=300,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-                    Genera únicamente SQL válido para DuckDB.
-                    Usa la tabla 'data'.
-                    Devuelve solo una consulta SELECT.
-                    No uses markdown.
-                    """
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-                    {schema_description}
+    sql_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        max_tokens=300,
+        messages=[
+            {
+                "role": "system",
+                "content": """
+                Genera únicamente SQL válido para DuckDB.
+                Usa la tabla 'data'.
+                Devuelve solo SELECT.
+                """
+            },
+            {
+                "role": "user",
+                "content": f"""
+                {schema_description}
 
-                    Pregunta:
-                    {prompt}
-                    """
-                }
-            ]
-        )
+                Pregunta:
+                {prompt}
+                """
+            }
+        ]
+    )
 
-        sql_query = sql_response.choices[0].message.content.strip()
-        sql_query = re.sub(r"```.*?\n", "", sql_query)
-        sql_query = sql_query.replace("```", "").strip()
+    sql_query = sql_response.choices[0].message.content.strip()
+    sql_query = re.sub(r"```.*?\n", "", sql_query)
+    sql_query = sql_query.replace("```", "").strip()
 
-        if not sql_query.lower().startswith("select"):
-            raise Exception("SQL inválido")
-
-    except:
-        with st.chat_message("assistant"):
-            st.write("No pude interpretar esa consulta.")
+    if not sql_query.lower().startswith("select"):
+        st.error("No se pudo generar una consulta válida.")
         st.stop()
 
     # -----------------------
@@ -160,77 +172,101 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
 
     try:
         result = con.execute(sql_query).df()
-    except:
-        with st.chat_message("assistant"):
-            st.write("No pude ejecutar el análisis.")
+    except Exception as e:
+        st.error(f"Error ejecutando SQL: {e}")
         st.stop()
 
     if result.empty:
-        with st.chat_message("assistant"):
-            st.write("La consulta no devolvió resultados.")
+        st.warning("La consulta no devolvió resultados.")
         st.stop()
 
     # -----------------------
-    # MOSTRAR SQL Y TABLA
+    # MOSTRAR SQL
     # -----------------------
 
-    st.divider()
-
-    st.subheader("🧾 Consulta Ejecutada")
-    with st.expander("Ver SQL generado"):
+    with st.expander("🧾 Ver SQL generado"):
         st.code(sql_query, language="sql")
 
-    st.subheader("📋 Resultado del Análisis")
+    # -----------------------
+    # MOSTRAR TABLA
+    # -----------------------
+
+    st.subheader("📋 Resultado")
     st.dataframe(result, use_container_width=True)
 
     # -----------------------
-    # ANALISIS INTERPRETATIVO (SOLO TEXTO)
+    # GRAFICACIÓN INTELIGENTE
     # -----------------------
 
-    try:
-        analysis_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=600,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """
-                    Eres un analista de datos.
-                    Interpreta únicamente el comportamiento numérico.
-                    No des recomendaciones.
-                    No sugieras acciones.
-                    No formatees como lista de acciones.
-                    Solo describe patrones, concentraciones,
-                    distribuciones y variaciones observadas.
-                    """
-                },
-                {
-                    "role": "user",
-                    "content": f"""
-                    Pregunta:
-                    {prompt}
+    if result.shape[1] == 2:
 
-                    Resultado:
-                    {result.head(25).to_string()}
+        st.subheader("📈 Visualización Automática")
 
-                    Interpreta los resultados.
-                    """
-                }
-            ]
-        )
+        col_x = result.columns[0]
+        col_y = result.columns[1]
 
-        analysis_text = analysis_response.choices[0].message.content
+        # Si fecha → línea
+        if pd.api.types.is_datetime64_any_dtype(result[col_x]):
+            fig, ax = plt.subplots(figsize=(10,5))
+            ax.plot(result[col_x], result[col_y])
+            ax.set_title("Tendencia Temporal")
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
 
-    except:
-        with st.chat_message("assistant"):
-            st.write("Error generando el análisis.")
-        st.stop()
+        else:
+            result_sorted = result.sort_values(by=col_y, ascending=False)
+            fig_width = max(8, len(result_sorted) * 0.6)
+            fig, ax = plt.subplots(figsize=(fig_width,5))
+
+            ax.bar(result_sorted[col_x].astype(str),
+                   result_sorted[col_y])
+
+            if len(result_sorted) > 6:
+                plt.xticks(rotation=60, ha="right")
+            else:
+                plt.xticks(rotation=0)
+
+            st.pyplot(fig)
+
+    # -----------------------
+    # ANALISIS PROFUNDO
+    # -----------------------
+
+    analysis_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        max_tokens=600,
+        messages=[
+            {
+                "role": "system",
+                "content": """
+                Eres un analista senior de datos.
+
+                Analiza profundamente el resultado considerando:
+                1. Patrón dominante
+                2. Concentración o dispersión
+                3. Magnitudes relativas
+                4. Variaciones relevantes
+                5. Posibles anomalías visibles
+
+                No des recomendaciones.
+                Solo análisis técnico interpretativo.
+                """
+            },
+            {
+                "role": "user",
+                "content": f"""
+                Pregunta:
+                {prompt}
+
+                Resultado:
+                {result.head(25).to_string()}
+
+                Analiza.
+                """
+            }
+        ]
+    )
 
     st.subheader("🧠 Análisis Interpretativo")
-
-    st.write(analysis_text)
-
-    st.session_state.messages.append(
-        {"role": "assistant", "content": analysis_text}
-    )
+    st.write(analysis_response.choices[0].message.content)
