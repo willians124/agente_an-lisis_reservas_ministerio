@@ -215,12 +215,33 @@ if st.button("Analizar"):
     # -----------------------
 
     if result.shape[1] == 2:
+    
         st.subheader("📈 Visualización")
-
-        fig, ax = plt.subplots()
-        ax.bar(result.iloc[:, 0].astype(str),
-               result.iloc[:, 1])
-        plt.xticks(rotation=45)
+    
+        col_x = result.columns[0]
+        col_y = result.columns[1]
+    
+        # Ordenar automáticamente por valor descendente
+        result_sorted = result.sort_values(by=col_y, ascending=False)
+    
+        fig_width = max(8, len(result_sorted) * 0.6)  # ancho dinámico
+        fig, ax = plt.subplots(figsize=(fig_width, 5))
+    
+        ax.bar(
+            result_sorted[col_x].astype(str),
+            result_sorted[col_y]
+        )
+    
+        # Rotación inteligente según cantidad de categorías
+        if len(result_sorted) > 6:
+            plt.xticks(rotation=60, ha="right")
+        else:
+            plt.xticks(rotation=0)
+    
+        ax.set_xlabel("")
+        ax.set_ylabel(col_y)
+    
+        plt.tight_layout()
         st.pyplot(fig)
 
     # -----------------------
