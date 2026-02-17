@@ -12,7 +12,7 @@ from openai import OpenAI
 st.set_page_config(page_title="Data Intelligence Dashboard", layout="wide")
 
 st.title("📊 Data Intelligence Dashboard")
-st.caption("Panel Analítico de Reservas Turísticas + Copiloto Conversacional")
+st.caption("Panel Analítico de Reservas Turísticas + Agente Conversacional")
 
 # -----------------------
 # OPENAI
@@ -222,7 +222,7 @@ st.divider()
 # -----------------------
 # CHAT / CONSULTA AVANZADA
 # -----------------------
-st.subheader("💬 Copiloto Conversacional (consulta + resultado + gráfico + análisis)")
+st.subheader("💬 Agente Conversacional (consulta + resultado + gráfico + análisis)")
 
 schema_description = """
 Tabla: data
