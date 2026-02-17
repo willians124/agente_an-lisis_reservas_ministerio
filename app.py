@@ -173,10 +173,27 @@ if st.button("Analizar"):
 
     parts = re.split(r"ANALISIS:", full_response, flags=re.IGNORECASE)
 
-    if len(parts) < 2:
+    
+    def extract_sql_and_analysis(text):
+        sql_match = re.search(r"SQL:\s*(.*?)\s*ANALISIS:", text, re.DOTALL | re.IGNORECASE)
+        analysis_match = re.search(r"ANALISIS:\s*(.*)", text, re.DOTALL | re.IGNORECASE)
+    
+        if not sql_match or not analysis_match:
+            return None, None
+    
+        sql = sql_match.group(1).strip()
+        analysis = analysis_match.group(1).strip()
+    
+        return sql, analysis
+    
+    
+    sql_query, analysis_text = extract_sql_and_analysis(full_response)
+    
+    if not sql_query or not analysis_text:
         st.error("El modelo no devolvió el formato esperado.")
+        st.write(full_response)  # 👈 Esto te ayuda a debuggear en demo
         st.stop()
-
+        
     sql_part = parts[0]
     analysis_text = parts[1].strip()
 
