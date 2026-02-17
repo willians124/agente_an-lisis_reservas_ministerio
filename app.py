@@ -134,12 +134,12 @@ if st.button("Analizar"):
 
                     Luego escribe un análisis interpetrativo.
 
-                    Formato exacto:
-
+                     Formato exacto:
+                    
                     SQL:
                     <query>
-
-                    Interpretación del análisis:
+                    
+                    ANALISIS:
                     <explicacion>
                     """
                 },
