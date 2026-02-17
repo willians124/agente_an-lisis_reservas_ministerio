@@ -2,7 +2,6 @@ import streamlit as st
 import duckdb
 import pandas as pd
 import os
-import matplotlib.pyplot as plt
 from openai import OpenAI
 import re
 
@@ -10,16 +9,8 @@ import re
 # CONFIG
 # -----------------------
 
-st.set_page_config(
-    page_title="Executive Reservation Copilot",
-    layout="wide"
-)
-
-st.title("📊 Executive Reservation Intelligence Copilot")
-
-# -----------------------
-# OPENAI CLIENT
-# -----------------------
+st.set_page_config(page_title="Data Exploration Copilot", layout="wide")
+st.title("🧠 Data Exploration Copilot")
 
 api_key = os.getenv("OPENAI_API_KEY")
 
@@ -41,45 +32,45 @@ def load_data():
 
 df = load_data()
 
-# -----------------------
-# DUCKDB
-# -----------------------
-
 con = duckdb.connect()
 con.register("data", df)
 
 # -----------------------
-# METRICS
+# CHAT STATE
 # -----------------------
 
-col1, col2, col3, col4 = st.columns(4)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-col1.metric("Total Reservas", f"{df.shape[0]:,}")
-col2.metric("Total Visitantes", f"{int(df['totalvisitante'].sum()):,}")
-col3.metric("Reservas Pagadas", f"{int((df['estado_r']=='Pagado').sum()):,}")
-col4.metric("Reservas Anuladas", f"{int((df['estado_r']=='Anulado').sum()):,}")
+# Mostrar historial
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
-st.divider()
+# Input usuario
+if prompt := st.chat_input("Haz una pregunta sobre los datos..."):
 
-# -----------------------
-# USER INPUT
-# -----------------------
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
-st.subheader("💬 Consulta")
-
-user_prompt = st.text_area("Haz tu pregunta:")
-
-if st.button("Analizar"):
-
-    if not user_prompt.strip():
-        st.warning("Escribe una pregunta.")
-        st.stop()
-
-    schema_description = """ Tabla: data Columnas: - nidreserva (id reserva) - scodigo_reserva (codigo único) - estado_r (estado de la reserva) Valores posibles: - Reservado - Pagado - Anulado - Vencido - Cerrado - Fusionado - Penalizado - ruta (nombre de ruta turística) - razon_social (agencia o empresa) - nguia (cantidad de guías asignados) - npa_cocinero (cantidad de cocineros) - npa_ayudante (cantidad de ayudantes) - npa_porteador (cantidad de porteadores) - totalvisitante (total de visitantes en la reserva) - cant_bajas (cantidad de bajas/cancelaciones parciales) - campamentos - guias - fechaVisita (fecha programada de visita) - nidLugar (lugar turístico) Valores posibles: - 1 = Llaqta Machupicchu - 2 = Red de Camino Inka """
+    with st.chat_message("user"):
+        st.write(prompt)
 
     # -----------------------
-    # STEP 1: GENERAR SQL
+    # PASO 1: GENERAR SQL INTERNO
     # -----------------------
+
+    schema_description = """
+    Tabla: data
+
+    Columnas principales:
+    - estado_r
+    - ruta
+    - razon_social
+    - totalvisitante
+    - cant_bajas
+    - fechaVisita
+    - nidLugar
+    """
 
     try:
         sql_response = client.chat.completions.create(
@@ -93,7 +84,7 @@ if st.button("Analizar"):
                     Genera únicamente SQL válido para DuckDB.
                     Usa la tabla 'data'.
                     No uses markdown.
-                    Solo devuelve la consulta.
+                    Solo devuelve la consulta SELECT.
                     """
                 },
                 {
@@ -102,7 +93,7 @@ if st.button("Analizar"):
                     {schema_description}
 
                     Pregunta:
-                    {user_prompt}
+                    {prompt}
                     """
                 }
             ]
@@ -110,96 +101,71 @@ if st.button("Analizar"):
 
         sql_query = sql_response.choices[0].message.content.strip()
 
+        sql_query = re.sub(r"```.*?\n", "", sql_query)
+        sql_query = sql_query.replace("```", "").strip()
+
+        if not sql_query.lower().startswith("select"):
+            raise Exception("SQL inválido generado.")
+
     except Exception as e:
-        st.error(f"Error generando SQL: {e}")
+        with st.chat_message("assistant"):
+            st.write("No pude interpretar esa consulta.")
         st.stop()
-
-    # Limpiar posibles bloques markdown
-    sql_query = re.sub(r"```.*?\n", "", sql_query)
-    sql_query = sql_query.replace("```", "").strip()
-
-    if not sql_query.lower().startswith("select"):
-        st.error("La consulta generada no es válida.")
-        st.stop()
-
-    st.code(sql_query, language="sql")
 
     # -----------------------
-    # STEP 2: EJECUTAR SQL
+    # PASO 2: EJECUTAR SQL
     # -----------------------
 
     try:
         result = con.execute(sql_query).df()
-    except Exception as e:
-        st.error(f"Error ejecutando SQL: {e}")
+    except:
+        with st.chat_message("assistant"):
+            st.write("No pude ejecutar el análisis sobre los datos.")
         st.stop()
 
     if result.empty:
-        st.warning("No hay resultados.")
+        with st.chat_message("assistant"):
+            st.write("La consulta no devolvió resultados relevantes.")
         st.stop()
 
-    st.subheader("📋 Resultado")
-    st.dataframe(result, use_container_width=True)
-
     # -----------------------
-    # GRÁFICO INTELIGENTE
-    # -----------------------
-
-    if result.shape[1] == 2:
-
-        st.subheader("📈 Visualización")
-
-        col_x = result.columns[0]
-        col_y = result.columns[1]
-
-        result_sorted = result.sort_values(by=col_y, ascending=False)
-
-        fig_width = max(8, len(result_sorted) * 0.6)
-        fig, ax = plt.subplots(figsize=(fig_width, 5))
-
-        ax.bar(
-            result_sorted[col_x].astype(str),
-            result_sorted[col_y]
-        )
-
-        if len(result_sorted) > 6:
-            plt.xticks(rotation=60, ha="right")
-        else:
-            plt.xticks(rotation=0)
-
-        plt.tight_layout()
-        st.pyplot(fig)
-
-    # -----------------------
-    # STEP 3: ANALISIS DEL DATO
+    # PASO 3: ANALISIS DEL DATO
     # -----------------------
 
     try:
         analysis_response = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=500,
+            temperature=0.3,
+            max_tokens=600,
             messages=[
                 {
                     "role": "system",
                     "content": """
-                    Eres un analista de datos.
-                    Interpreta patrones numéricos.
+                    Eres un analista de datos explorando un dataset turístico.
+
+                    Analiza el comportamiento de los datos de manera clara.
+
+                    - Identifica patrones
+                    - Señala concentraciones relevantes
+                    - Detecta variaciones importantes
+                    - Describe tendencias si existen
+                    - Interpreta relaciones si se observan
+
                     No des recomendaciones.
                     No sugieras acciones.
-                    Solo analiza comportamiento del dato.
+                    Solo analiza los datos.
                     """
                 },
                 {
                     "role": "user",
                     "content": f"""
-                    Pregunta:
-                    {user_prompt}
+                    Pregunta original:
+                    {prompt}
 
-                    Resultado:
-                    {result.head(20).to_string()}
+                    Resultado obtenido:
+                    {result.head(25).to_string()}
 
-                    Analiza los datos.
+                    Analiza estos resultados.
                     """
                 }
             ]
@@ -208,8 +174,13 @@ if st.button("Analizar"):
         analysis_text = analysis_response.choices[0].message.content
 
     except Exception as e:
-        st.error(f"Error generando análisis: {e}")
+        with st.chat_message("assistant"):
+            st.write("Ocurrió un error generando el análisis.")
         st.stop()
 
-    st.subheader("🧠 Análisis del Dato")
-    st.write(analysis_text)
+    with st.chat_message("assistant"):
+        st.write(analysis_text)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": analysis_text}
+    )
