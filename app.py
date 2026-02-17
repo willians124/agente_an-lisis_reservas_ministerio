@@ -132,14 +132,14 @@ if st.button("Analizar"):
                     Genera SQL puro compatible con DuckDB.
                     No uses markdown ni ```.
 
-                    Luego escribe un análisis ejecutivo.
+                    Luego escribe un análisis interpetrativo.
 
                     Formato exacto:
 
                     SQL:
                     <query>
 
-                    ANALISIS:
+                    Interpretación del análisis:
                     <explicacion>
                     """
                 },
