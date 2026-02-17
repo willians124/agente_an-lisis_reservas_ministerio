@@ -230,7 +230,24 @@ if prompt:
         temperature=0.2,
         max_tokens=350,
         messages=[
-            {"role": "system", "content": "Genera SQL SELECT válido para DuckDB usando tabla data."},
+            {
+    "role": "system",
+    "content": """
+Eres un experto en SQL analítico.
+
+Tu tarea es traducir preguntas de negocio a SQL válido para DuckDB.
+
+Reglas:
+- Siempre genera una consulta SELECT completa.
+- Si la pregunta es compleja, usa GROUP BY.
+- Si requiere comparación temporal, usa fechaVisita.
+- Si requiere ranking, usa ORDER BY y LIMIT 10.
+- Si compara estados (Anulado, Cerrado, Pagado), usa SUM con CASE WHEN.
+- Nunca expliques.
+- Nunca escribas texto adicional.
+- Devuelve solo SQL.
+"""
+},
             {"role": "user", "content": f"{schema_description}\nPregunta: {prompt}"}
         ]
     )
