@@ -279,8 +279,8 @@ Reglas:
 
         analysis = client.chat.completions.create(
             model="gpt-4o-mini",
-            temperature=0.3,
-            max_tokens=600,
+            temperature=0.25,
+            max_tokens=800,
             messages=[
                 {"role": "system", "content": """
                 Eres un analista senior.
