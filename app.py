@@ -10,11 +10,11 @@ import re
 # -----------------------
 
 st.set_page_config(
-    page_title="Data Intelligence Copilot",
+    page_title="Data Intelligence",
     layout="wide"
 )
 
-st.title("📊 Data Intelligence Copilot")
+st.title("📊 Data Intelligence")
 st.caption("Explorador Analítico de Reservas Turísticas")
 
 # -----------------------
