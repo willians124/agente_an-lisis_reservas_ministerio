@@ -77,18 +77,7 @@ if prompt := st.chat_input("Pregunta algo sobre los datos..."):
     # STEP 1: GENERAR SQL
     # -----------------------
 
-    schema_description = """
-    Tabla: data
-
-    Columnas disponibles:
-    - estado_r (estado de reserva)
-    - ruta
-    - razon_social
-    - totalvisitante
-    - cant_bajas
-    - fechaVisita
-    - nidLugar
-    """
+    schema_description = """ Tabla: data Columnas: - nidreserva (id reserva) - scodigo_reserva (codigo único) - estado_r (estado de la reserva) Valores posibles: - Reservado - Pagado - Anulado - Vencido - Cerrado - Fusionado - Penalizado - ruta (nombre de ruta turística) - razon_social (agencia o empresa) - nguia (cantidad de guías asignados) - npa_cocinero (cantidad de cocineros) - npa_ayudante (cantidad de ayudantes) - npa_porteador (cantidad de porteadores) - totalvisitante (total de visitantes en la reserva) - cant_bajas (cantidad de bajas/cancelaciones parciales) - campamentos - guias - fechaVisita (fecha programada de visita) - nidLugar (lugar turístico) Valores posibles: - 1 = Llaqta Machupicchu - 2 = Red de Camino Inka """
 
     try:
         sql_response = client.chat.completions.create(
