@@ -73,7 +73,6 @@ def plot_result(result, prompt):
     num_cols = [c for c in result.columns if pd.api.types.is_numeric_dtype(result[c])]
     non_num_cols = [c for c in result.columns if c not in num_cols]
 
-    # HISTOGRAMA
     if wants_histogram(prompt) and len(num_cols) > 0:
         col = num_cols[0]
         st.markdown("### 📈 Histograma")
@@ -83,7 +82,6 @@ def plot_result(result, prompt):
         st.pyplot(fig)
         return
 
-    # 2 columnas
     if result.shape[1] == 2:
         x, y = result.columns
 
@@ -105,11 +103,9 @@ def plot_result(result, prompt):
             st.pyplot(fig)
         return
 
-    # 3 columnas (categoría + 2 métricas)
     if len(non_num_cols) >= 1 and len(num_cols) >= 2:
         cat = non_num_cols[0]
         m1, m2 = num_cols[:2]
-
         tmp = result.sort_values(m1, ascending=False)
 
         st.markdown(f"### 📊 {m1} por {cat}")
@@ -166,27 +162,69 @@ with colB:
 st.divider()
 
 # -----------------------
-# CHAT
+# CHAT CON MEMORIA
 # -----------------------
 st.subheader("💬 Copiloto Analítico")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
 prompt = st.chat_input("Haz una consulta...")
 
 if prompt:
 
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    # -----------------------
+    # SCHEMA DETALLADO
+    # -----------------------
     schema_description = """
     Tabla: data
+
     Columnas:
-    - estado_r
-    - ruta
-    - razon_social
+
+    - nidreserva (id reserva)
+    - scodigo_reserva (codigo único)
+
+    - estado_r (estado de la reserva)
+        Valores posibles:
+        - Reservado
+        - Pagado
+        - Anulado
+        - Vencido
+        - Cerrado
+        - Fusionado
+        - Penalizado
+
+    - ruta (nombre de ruta turística)
+    - razon_social (agencia o empresa)
+
+    - nguia (cantidad de guías asignados)
+    - npa_cocinero
+    - npa_ayudante
+    - npa_porteador
+
     - totalvisitante
     - cant_bajas
+
+    - campamentos
+    - guias
+
     - fechaVisita
+
     - nidLugar
+        Valores posibles:
+        - 1 = Llaqta Machupicchu
+        - 2 = Red de Camino Inka
     """
 
-    # Generar SQL
     sql_gen = client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.2,
@@ -201,46 +239,45 @@ if prompt:
     sql_query = extract_sql(raw_sql)
 
     if not sql_query:
-        st.error("El modelo no generó una consulta SQL válida.")
-        st.write(raw_sql)
+        with st.chat_message("assistant"):
+            st.error("No se pudo generar SQL válido.")
         st.stop()
-
-    with st.expander("🧾 Ver SQL generado"):
-        st.code(sql_query, language="sql")
 
     try:
         result = con.execute(sql_query).df()
     except Exception as e:
-        st.error(f"Error ejecutando SQL: {e}")
+        with st.chat_message("assistant"):
+            st.error(f"Error ejecutando SQL: {e}")
         st.stop()
 
-    if result.empty:
-        st.warning("La consulta no devolvió resultados.")
-        st.stop()
+    with st.chat_message("assistant"):
 
-    st.subheader("📋 Resultado")
-    st.dataframe(result, use_container_width=True)
+        with st.expander("🧾 Ver SQL generado"):
+            st.code(sql_query, language="sql")
 
-    # Graficación automática
-    plot_result(result, prompt)
+        st.markdown("### 📋 Resultado")
+        st.dataframe(result, use_container_width=True)
 
-    # -----------------------
-    # ANALISIS
-    # -----------------------
-    analysis = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        max_tokens=600,
-        messages=[
-            {"role": "system", "content": """
-            Eres un analista senior.
-            Analiza profundamente los datos.
-            No des recomendaciones.
-            Describe patrones, concentración y variaciones.
-            """},
-            {"role": "user", "content": result.head(25).to_string()}
-        ]
-    )
+        plot_result(result, prompt)
 
-    st.subheader("🧠 Análisis Interpretativo")
-    st.write(analysis.choices[0].message.content)
+        analysis = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=600,
+            messages=[
+                {"role": "system", "content": """
+                Eres un analista senior.
+                Analiza profundamente los datos.
+                No des recomendaciones.
+                Describe patrones, concentración y variaciones.
+                """},
+                {"role": "user", "content": result.head(25).to_string()}
+            ]
+        )
+
+        analysis_text = analysis.choices[0].message.content
+
+        st.markdown("### 🧠 Análisis Interpretativo")
+        st.write(analysis_text)
+
+    st.session_state.chat_history.append({"role": "assistant", "content": analysis_text})
